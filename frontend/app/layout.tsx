@@ -11,24 +11,7 @@ export const metadata: Metadata = {
   title: "ProofLayer - Verifiable Security Contributions on Sui",
   description:
     "A decentralized coordination layer for security research. Incentivizing vulnerability discovery with on-chain verification and automated payouts.",
-  generator: "v0.app",
-  icons: {
-    icon: [
-      {
-        url: "/icon-light-32x32.png",
-        media: "(prefers-color-scheme: light)",
-      },
-      {
-        url: "/icon-dark-32x32.png",
-        media: "(prefers-color-scheme: dark)",
-      },
-      {
-        url: "/icon.svg",
-        type: "image/svg+xml",
-      },
-    ],
-    apple: "/apple-icon.png",
-  },
+  generator: "Prooflayer",
 }
 
 export default function RootLayout({

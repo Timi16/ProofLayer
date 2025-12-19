@@ -10,12 +10,14 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { ArrowLeft, Upload, FileText, Lock, CheckCircle2, UserPlus, Send } from "lucide-react"
 import Link from "next/link"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useProofLayer } from "@/hooks/useProofLayer"
 import { useCurrentAccount } from "@mysten/dapp-kit"
 import { toast } from "sonner"
+import { useSearchParams } from "next/navigation"
 
 export default function SubmitPage() {
+  const searchParams = useSearchParams()
   const [files, setFiles] = useState<File[]>([])
   const [isEncrypting, setIsEncrypting] = useState(false)
   const [isEncrypted, setIsEncrypted] = useState(false)
@@ -27,18 +29,69 @@ export default function SubmitPage() {
   const [profileId, setProfileId] = useState("")
   const [title, setTitle] = useState("")
   const [summary, setSummary] = useState("")
+  const [severity, setSeverity] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isCreatingProfile, setIsCreatingProfile] = useState(false)
+
+  // Walrus upload state
+  const [uploadProgress, setUploadProgress] = useState<string>("")
+  const [fileBlobId, setFileBlobId] = useState<string>("")
+  const [fileBlobUrl, setFileBlobUrl] = useState<string>("")
+  const [metadataBlobId, setMetadataBlobId] = useState<string>("")
+  const [metadataBlobUrl, setMetadataBlobUrl] = useState<string>("")
+
+  // Auto-fill Pool ID from URL params
+  useEffect(() => {
+    const poolIdFromUrl = searchParams.get('poolId');
+    if (poolIdFromUrl) {
+      setPoolId(poolIdFromUrl);
+      console.log('[Submit] Pool ID from URL:', poolIdFromUrl);
+    }
+  }, [searchParams]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       setFiles(Array.from(e.target.files))
-      // Simulate encryption
-      setIsEncrypting(true)
-      setTimeout(() => {
-        setIsEncrypting(false)
-        setIsEncrypted(true)
-      }, 2000)
+      setIsEncrypted(false)
+      setFileBlobId("")
+      setFileBlobUrl("")
+      setMetadataBlobId("")
+      setMetadataBlobUrl("")
+    }
+  }
+
+  /**
+   * Upload a file to Walrus storage
+   * @param file - File to upload
+   * @returns Object containing blobId and blobUrl
+   */
+  const uploadToWalrus = async (file: File): Promise<{ blobId: string; blobUrl: string }> => {
+    const formData = new FormData()
+    formData.append("file", file)
+
+    console.log(`[Upload] Uploading ${file.name} to Walrus...`)
+
+    const response = await fetch("/api/walrus/upload", {
+      method: "POST",
+      body: formData,
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || "Failed to upload to Walrus")
+    }
+
+    const data = await response.json()
+
+    if (!data.success) {
+      throw new Error(data.error || "Upload failed")
+    }
+
+    console.log(`[Upload] Success! Blob ID: ${data.blobId}`)
+
+    return {
+      blobId: data.blobId,
+      blobUrl: data.blobUrl,
     }
   }
 
@@ -51,8 +104,28 @@ export default function SubmitPage() {
       setIsCreatingProfile(true);
       const result: any = await createProfile();
       console.log("Profile Result:", result);
-      // In a real app, we'd parse the event to get the ID automatically
-      toast.success("Profile created successfully! details in console");
+
+      // Extract Profile ID from transaction result
+      if (result?.objectChanges) {
+        const createdProfile = result.objectChanges.find(
+          (change: any) =>
+            change.type === 'created' &&
+            change.objectType?.includes('ContributorProfile')
+        );
+
+        if (createdProfile?.objectId) {
+          const newProfileId = createdProfile.objectId;
+          setProfileId(newProfileId);
+          console.log("✅ Profile ID extracted:", newProfileId);
+          toast.success(`Profile created! ID: ${newProfileId.slice(0, 10)}...`);
+
+          // Copy to clipboard
+          navigator.clipboard.writeText(newProfileId);
+          toast.success("Profile ID copied to clipboard!");
+        } else {
+          toast.success("Profile created! Check console for details");
+        }
+      }
     } catch (error) {
       console.error(error);
       toast.error("Failed to create profile");
@@ -62,30 +135,113 @@ export default function SubmitPage() {
   }
 
   const handleSubmit = async () => {
+    // Validation
     if (!account) {
-      toast.error("Please connect your wallet first");
-      return;
+      toast.error("Please connect your wallet first")
+      return
     }
+
     if (!poolId || !profileId) {
-      toast.error("Please enter Pool ID and Profile ID");
-      return;
+      toast.error("Please enter Pool ID and Profile ID")
+      return
+    }
+
+    if (!title || !summary) {
+      toast.error("Please fill in title and summary")
+      return
+    }
+
+    if (!severity) {
+      toast.error("Please select severity level")
+      return
+    }
+
+    if (files.length === 0) {
+      toast.error("Please upload at least one file")
+      return
     }
 
     try {
-      setIsSubmitting(true);
-      // In a real implementation: 
-      // 1. Upload files to Walrus/IPFS -> get metadataUrl & encryptedDataUrl
-      // 2. Encrypt file content
-      const dummyMetadataUrl = "https://walrus.example/metadata/" + Date.now();
-      const dummyEncryptedUrl = "https://walrus.example/data/" + Date.now();
+      setIsSubmitting(true)
+      setIsEncrypting(true)
 
-      await submitContribution(poolId, dummyMetadataUrl, dummyEncryptedUrl, profileId);
-      toast.success("Contribution submitted successfully!");
+      // Step 1: Upload the main file(s) to Walrus
+      setUploadProgress("Uploading research file to Walrus...")
+      console.log("[Submit] Step 1: Uploading file to Walrus")
+
+      const mainFile = files[0] // For now, we'll upload the first file
+      const fileUploadResult = await uploadToWalrus(mainFile)
+
+      setFileBlobId(fileUploadResult.blobId)
+      setFileBlobUrl(fileUploadResult.blobUrl)
+
+      console.log("[Submit] File uploaded:", fileUploadResult)
+
+      // Step 2: Create metadata JSON and upload to Walrus
+      setUploadProgress("Creating and uploading metadata to Walrus...")
+      console.log("[Submit] Step 2: Creating metadata")
+
+      const metadata = {
+        title,
+        summary,
+        severity,
+        filename: mainFile.name,
+        fileSize: mainFile.size,
+        fileBlobId: fileUploadResult.blobId,
+        fileBlobUrl: fileUploadResult.blobUrl,
+        submittedAt: new Date().toISOString(),
+        submittedBy: account.address,
+      }
+
+      // Convert metadata to JSON blob
+      const metadataBlob = new Blob([JSON.stringify(metadata, null, 2)], {
+        type: "application/json",
+      })
+      const metadataFile = new File([metadataBlob], "metadata.json", {
+        type: "application/json",
+      })
+
+      const metadataUploadResult = await uploadToWalrus(metadataFile)
+
+      setMetadataBlobId(metadataUploadResult.blobId)
+      setMetadataBlobUrl(metadataUploadResult.blobUrl)
+
+      console.log("[Submit] Metadata uploaded:", metadataUploadResult)
+
+      setIsEncrypting(false)
+      setIsEncrypted(true)
+
+      // Step 3: Submit to Sui smart contract
+      setUploadProgress("Submitting to Sui blockchain...")
+      console.log("[Submit] Step 3: Submitting to smart contract")
+      console.log("[Submit] Package ID: 0x4b8be87726a90695109542699847ea3f830c706ba6cfd46f1e9c607f76f3c600")
+      console.log("[Submit] Pool ID:", poolId)
+      console.log("[Submit] Profile ID:", profileId)
+      console.log("[Submit] Metadata Blob ID:", metadataUploadResult.blobId)
+      console.log("[Submit] File Blob ID:", fileUploadResult.blobId)
+
+      // Call the smart contract with blob IDs
+      await submitContribution(
+        poolId,
+        metadataUploadResult.blobId, // metadata_url (vector<u8>)
+        fileUploadResult.blobId, // encrypted_data_url (vector<u8>)
+        profileId
+      )
+
+      // Success!
+      setUploadProgress("")
+      toast.success("Contribution submitted successfully!")
+      console.log("[Submit] ✅ Submission complete!")
+      console.log("[Submit] File Blob URL:", fileUploadResult.blobUrl)
+      console.log("[Submit] Metadata Blob URL:", metadataUploadResult.blobUrl)
+
     } catch (error) {
-      console.error(error);
-      toast.error("Failed to submit contribution");
+      console.error("[Submit] Error:", error)
+      setIsEncrypting(false)
+      setUploadProgress("")
+      toast.error(error instanceof Error ? error.message : "Failed to submit contribution")
     } finally {
-      setIsSubmitting(false);
+      setIsSubmitting(false)
     }
   }
 
@@ -189,13 +345,18 @@ export default function SubmitPage() {
                 <Label htmlFor="severity" className="text-base font-semibold">
                   Severity Level *
                 </Label>
-                <select id="severity" className="mt-2 w-full h-12 px-3 rounded-lg border border-border bg-background">
-                  <option>Select severity</option>
-                  <option>Critical</option>
-                  <option>High</option>
-                  <option>Medium</option>
-                  <option>Low</option>
-                  <option>Informational</option>
+                <select
+                  id="severity"
+                  value={severity}
+                  onChange={(e) => setSeverity(e.target.value)}
+                  className="mt-2 w-full h-12 px-3 rounded-lg border border-border bg-background"
+                >
+                  <option value="">Select severity</option>
+                  <option value="Critical">Critical</option>
+                  <option value="High">High</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Low">Low</option>
+                  <option value="Informational">Informational</option>
                 </select>
               </div>
             </div>
@@ -242,8 +403,59 @@ export default function SubmitPage() {
               </div>
             )}
 
+            {/* Upload Progress */}
+            {uploadProgress && (
+              <div className="mt-6 rounded-lg border border-primary/30 bg-primary/5 p-6">
+                <div className="flex items-start gap-3">
+                  <div className="h-5 w-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                  <div>
+                    <div className="font-semibold text-primary mb-1">Processing...</div>
+                    <div className="text-sm text-muted-foreground">{uploadProgress}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Success - Files Uploaded to Walrus */}
+            {fileBlobId && metadataBlobId && !isSubmitting && (
+              <div className="mt-6 rounded-lg border border-green-500/30 bg-green-500/5 p-6">
+                <div className="flex items-start gap-3">
+                  <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <div className="font-semibold text-green-500 mb-2">Files Uploaded to Walrus!</div>
+                    <div className="space-y-2 text-sm">
+                      <div>
+                        <div className="font-medium text-foreground">Research File:</div>
+                        <a
+                          href={fileBlobUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline break-all"
+                        >
+                          {fileBlobUrl}
+                        </a>
+                        <div className="text-xs text-muted-foreground mt-1">Blob ID: {fileBlobId}</div>
+                      </div>
+                      <div>
+                        <div className="font-medium text-foreground">Metadata:</div>
+                        <a
+                          href={metadataBlobUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline break-all"
+                        >
+                          {metadataBlobUrl}
+                        </a>
+                        <div className="text-xs text-muted-foreground mt-1">Blob ID: {metadataBlobId}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Encryption Status */}
-            {(isEncrypting || isEncrypted) && (
+            {(isEncrypting || isEncrypted) && !fileBlobId && (
               <div className="mt-6 rounded-lg border border-primary/30 bg-primary/5 p-6">
                 <div className="flex items-start gap-3">
                   {isEncrypting ? (

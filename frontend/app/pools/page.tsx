@@ -6,96 +6,129 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Search, Plus } from "lucide-react"
 import Link from "next/link"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useSuiClient, useCurrentAccount } from "@mysten/dapp-kit"
 
-const poolsData = [
-  {
-    id: 1,
-    title: "DeepBook V3 Audit",
-    category: "DEFI PROTOCOL",
-    description: "Comprehensive review of CLOB matching engine logic.",
-    tags: ["Move", "Smart Contracts"],
-    raised: "45,000",
-    goal: "50,000",
-    progress: 90,
-    daysLeft: 2,
-    status: "ACTIVE",
-    image: "/images/image.png",
-  },
-  {
-    id: 2,
-    title: "Scallop Protocol",
-    category: "LIQUID STAKING",
-    description: "Lending protocol core contract audit focusing on reentrancy.",
-    tags: ["Rust", "Formal Verification"],
-    raised: "12,500",
-    goal: "80,000",
-    progress: 15,
-    daysLeft: 14,
-    status: "ACTIVE",
-    image: "/images/image.png",
-  },
-  {
-    id: 3,
-    title: "Aftermath Finance",
-    category: "INFRASTRUCTURE",
-    description: "Aggregation router security assessment.",
-    tags: ["TypeScript", "SDK"],
-    raised: "20,000",
-    goal: "35,000",
-    progress: 57,
-    daysLeft: 0,
-    status: "PAUSED",
-    image: "/images/image.png",
-  },
-  {
-    id: 4,
-    title: "Cetus AMM",
-    category: "DEX",
-    description: "Concentrated liquidity pool math verification.",
-    tags: ["Move", "Math Lib"],
-    raised: "2,100",
-    goal: "25,000",
-    progress: 8,
-    daysLeft: 21,
-    status: "ACTIVE",
-    image: "/images/image.png",
-  },
-  {
-    id: 5,
-    title: "Bucket Protocol",
-    category: "GAMEFI",
-    description: "In-game economy tokenomics verification.",
-    tags: ["Economics"],
-    raised: "15,000",
-    goal: "15,000",
-    progress: 100,
-    daysLeft: 0,
-    status: "COMPLETED",
-    image: "/images/image.png",
-  },
-  {
-    id: 6,
-    title: "Pyth Integrations",
-    category: "ORACLE",
-    description: "Verification of oracle data consumption patterns.",
-    tags: ["Move", "Integration"],
-    raised: "8,450",
-    goal: "10,000",
-    progress: 84,
-    daysLeft: 5,
-    status: "ACTIVE",
-    image: "/images/image.png",
-  },
-]
+const PACKAGE_ID = process.env.NEXT_PUBLIC_PROOFLAYER_PACKAGE_ID;
+
+interface Pool {
+  id: string;
+  title: string;
+  category: string;
+  description: string;
+  tags: string[];
+  raised: string;
+  goal: string;
+  progress: number;
+  status: string;
+  objectId: string;
+}
 
 export default function PoolsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [activeFilter, setActiveFilter] = useState("All Pools")
+  const [pools, setPools] = useState<Pool[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const suiClient = useSuiClient()
+  const account = useCurrentAccount()
+
+  // Fetch real pools from blockchain
+  useEffect(() => {
+    const fetchPools = async () => {
+      if (!PACKAGE_ID) {
+        console.error("Package ID not configured");
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        console.log("[Pools] Fetching pools from blockchain...");
+        console.log("[Pools] Package ID:", PACKAGE_ID);
+
+        // Query PoolCreated events to get all pool IDs
+        const poolEvents = await suiClient.queryEvents({
+          query: {
+            MoveEventType: `${PACKAGE_ID}::contribution_pool::PoolCreated`
+          },
+          limit: 50,
+        });
+
+        console.log("[Pools] Found pool events:", poolEvents);
+
+        // Extract pool IDs from events
+        const poolIds = poolEvents.data.map((event: any) => {
+          console.log("[Pools] Event parsed JSON:", event.parsedJson);
+          return event.parsedJson?.pool_id;
+        }).filter(Boolean);
+
+        console.log("[Pools] Pool IDs from events:", poolIds);
+
+        if (poolIds.length === 0) {
+          console.log("[Pools] No pools found");
+          setPools([]);
+          setIsLoading(false);
+          return;
+        }
+
+        // Fetch full pool objects using multiGetObjects for efficiency
+        const poolDataResults = await suiClient.multiGetObjects({
+          ids: poolIds,
+          options: {
+            showContent: true,
+            showType: true,
+          }
+        });
+
+        console.log("[Pools] Pool data results:", poolDataResults);
+
+        // Parse pools from the fetched objects
+        const parsedPools: Pool[] = poolDataResults
+          .filter((result: any) => result.data) // Only include successful fetches
+          .map((result: any, index: number) => {
+            const content = result.data?.content?.fields;
+
+            // Try to parse description JSON
+            let parsedDesc: any = {};
+            try {
+              if (content?.description) {
+                parsedDesc = JSON.parse(content.description);
+              }
+            } catch (e) {
+              parsedDesc = { description: content?.description || "No description" };
+            }
+
+            const balance = content?.balance || 0;
+            const minReward = content?.min_reward_per_contribution || 1;
+
+            return {
+              id: result.data?.objectId || `pool-${index}`,
+              objectId: result.data?.objectId || "",
+              title: content?.title || `Pool ${index + 1}`,
+              category: "USER CREATED",
+              description: parsedDesc.description || content?.description || "No description",
+              tags: parsedDesc.tags || ["Move", "Security"],
+              raised: (Number(balance) / 1_000_000_000).toFixed(2),
+              goal: ((Number(balance) / 1_000_000_000) * 1.2).toFixed(2), // Estimate
+              progress: 80,
+              status: "ACTIVE",
+            };
+          });
+
+        console.log("[Pools] Parsed pools:", parsedPools);
+        setPools(parsedPools);
+        setIsLoading(false);
+      } catch (error) {
+        console.error("[Pools] Error fetching pools:", error);
+        setIsLoading(false);
+      }
+    };
+
+    fetchPools();
+  }, [suiClient, PACKAGE_ID]);
 
   const filters = ["All Pools", "Active", "Auditing", "Completed"]
 
-  const filteredPools = poolsData.filter((pool) => {
+  const filteredPools = pools.filter((pool) => {
     const matchesSearch =
       pool.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       pool.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -110,8 +143,8 @@ export default function PoolsPage() {
     return matchesSearch && matchesFilter
   })
 
-  const totalValueLocked = "$4.2M"
-  const activeAudits = "12"
+  const totalValueLocked = pools.reduce((sum, pool) => sum + parseFloat(pool.raised), 0).toFixed(2);
+  const activeAudits = pools.filter(p => p.status === "ACTIVE").length.toString()
 
   return (
     <main className="min-h-screen bg-background">
@@ -181,7 +214,16 @@ export default function PoolsPage() {
           </div>
         </div>
 
+        {/* Loading State */}
+        {isLoading && (
+          <div className="text-center py-20">
+            <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
+            <p className="mt-4 text-muted-foreground">Loading pools from blockchain...</p>
+          </div>
+        )}
+
         {/* Pools Grid */}
+        {!isLoading && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredPools.map((pool, index) => (
             <div
@@ -246,55 +288,44 @@ export default function PoolsPage() {
                 {/* Funding Progress */}
                 <div className="mb-4">
                   <div className="flex justify-between text-sm mb-2">
-                    <span className="text-muted-foreground">Raised</span>
-                    <span className="text-muted-foreground">Goal</span>
+                    <span className="text-muted-foreground">Pool Balance</span>
+                    <span className="text-muted-foreground">Object ID</span>
                   </div>
                   <div className="flex justify-between text-sm font-semibold mb-2">
                     <span>{pool.raised} SUI</span>
-                    <span>{pool.goal} SUI</span>
+                    <span className="text-xs text-muted-foreground">{pool.objectId.slice(0, 6)}...{pool.objectId.slice(-4)}</span>
                   </div>
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-primary to-primary/80 transition-all duration-500 ease-out"
-                      style={{ width: `${pool.progress}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between items-center mt-2">
-                    <span className="text-xs font-semibold text-primary">{pool.progress}% Funded</span>
-                    {pool.daysLeft > 0 && (
-                      <span className="text-xs text-muted-foreground">{pool.daysLeft} days left</span>
-                    )}
-                    {pool.status === "PAUSED" && <span className="text-xs text-orange-500">Pending update</span>}
-                    {pool.status === "COMPLETED" && (
-                      <span className="text-xs text-muted-foreground">Closed Nov 12</span>
-                    )}
+                  <div className="mt-3 p-2 bg-muted/50 rounded-md">
+                    <div className="text-xs text-muted-foreground mb-1">Pool ID (for submissions):</div>
+                    <code className="text-xs font-mono break-all">{pool.objectId}</code>
                   </div>
                 </div>
 
                 {/* Action Button */}
-                <Button
-                  className="w-full bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground transition-all"
-                  variant="outline"
-                >
-                  View Details
-                </Button>
+                <Link href={`/submit?poolId=${pool.objectId}`}>
+                  <Button
+                    className="w-full bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground transition-all"
+                    variant="outline"
+                  >
+                    Submit Contribution
+                  </Button>
+                </Link>
               </div>
             </div>
           ))}
         </div>
-
-        {filteredPools.length === 0 && (
-          <div className="text-center py-20">
-            <p className="text-xl text-muted-foreground">No pools found matching your criteria.</p>
-          </div>
         )}
 
-        {/* Show More Button */}
-        {filteredPools.length > 0 && (
-          <div className="mt-12 text-center animate-in fade-in duration-1000 delay-500">
-            <Button variant="outline" size="lg" className="border-border hover:border-primary bg-transparent">
-              Show more pools
-            </Button>
+        {!isLoading && filteredPools.length === 0 && (
+          <div className="text-center py-20">
+            <p className="text-xl text-muted-foreground mb-4">No pools found.</p>
+            <p className="text-sm text-muted-foreground mb-6">Create your first pool to get started!</p>
+            <Link href="/pools/create">
+              <Button size="lg" className="bg-primary text-primary-foreground">
+                <Plus className="h-5 w-5 mr-2" />
+                Create Pool
+              </Button>
+            </Link>
           </div>
         )}
       </div>

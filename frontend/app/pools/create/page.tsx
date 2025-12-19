@@ -69,8 +69,34 @@ export default function CreatePoolPage() {
       // Assuming minReward is 10% of total bounty for this simple implementation
       const minReward = bountyAmount * 0.1;
 
-      await createPool(poolName, fullDescription, minReward, bountyAmount);
-      toast.success("Pool created successfully!");
+      const result: any = await createPool(poolName, fullDescription, minReward, bountyAmount);
+      console.log("Pool Creation Result:", result);
+
+      // Extract Pool ID from transaction result
+      if (result?.objectChanges) {
+        const createdPool = result.objectChanges.find(
+          (change: any) =>
+            change.type === 'created' &&
+            change.objectType?.includes('ContributionPool')
+        );
+
+        if (createdPool?.objectId) {
+          const poolId = createdPool.objectId;
+          console.log("✅ Pool ID extracted:", poolId);
+
+          // Copy to clipboard
+          navigator.clipboard.writeText(poolId);
+          toast.success(`Pool created! ID copied: ${poolId.slice(0, 10)}...`);
+
+          // Show alert with Pool ID
+          alert(`Pool Created Successfully!\n\nPool ID (copied to clipboard):\n${poolId}\n\nSave this ID to submit contributions!`);
+        } else {
+          toast.success("Pool created successfully!");
+        }
+      } else {
+        toast.success("Pool created successfully!");
+      }
+
       router.push("/pools");
     } catch (error) {
       console.error(error);

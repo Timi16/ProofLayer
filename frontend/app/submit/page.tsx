@@ -128,102 +128,128 @@ function SubmitForm() {
     }
   }
 
-  const handleSubmit = async () => {
-    if (!account) {
-      toast.error("Please connect your wallet first")
-      return
+ const handleSubmit = async () => {
+  if (!account) {
+    toast.error("Please connect your wallet first")
+    return
+  }
+
+  if (!poolId || !profileId) {
+    toast.error("Please enter Pool ID and Profile ID")
+    return
+  }
+
+  if (!title || !summary) {
+    toast.error("Please fill in title and summary")
+    return
+  }
+
+  if (!severity) {
+    toast.error("Please select severity level")
+    return
+  }
+
+  if (files.length === 0) {
+    toast.error("Please upload at least one file")
+    return
+  }
+
+  try {
+    setIsSubmitting(true)
+    setIsEncrypting(true)
+
+    setUploadProgress("Uploading research file to Walrus...")
+    console.log("[Submit] Step 1: Uploading file to Walrus")
+
+    const mainFile = files[0]
+    const fileUploadResult = await uploadToWalrus(mainFile)
+
+    setFileBlobId(fileUploadResult.blobId)
+    setFileBlobUrl(fileUploadResult.blobUrl)
+
+    console.log("[Submit] File uploaded:", fileUploadResult)
+
+    setUploadProgress("Creating and uploading metadata to Walrus...")
+    console.log("[Submit] Step 2: Creating metadata")
+
+    const metadata = {
+      title,
+      summary,
+      severity,
+      filename: mainFile.name,
+      fileSize: mainFile.size,
+      fileBlobId: fileUploadResult.blobId,
+      fileBlobUrl: fileUploadResult.blobUrl,
+      submittedAt: new Date().toISOString(),
+      submittedBy: account.address,
     }
 
-    if (!poolId || !profileId) {
-      toast.error("Please enter Pool ID and Profile ID")
-      return
-    }
+    const metadataBlob = new Blob([JSON.stringify(metadata, null, 2)], {
+      type: "application/json",
+    })
+    const metadataFile = new File([metadataBlob], "metadata.json", {
+      type: "application/json",
+    })
 
-    if (!title || !summary) {
-      toast.error("Please fill in title and summary")
-      return
-    }
+    const metadataUploadResult = await uploadToWalrus(metadataFile)
 
-    if (!severity) {
-      toast.error("Please select severity level")
-      return
-    }
+    setMetadataBlobId(metadataUploadResult.blobId)
+    setMetadataBlobUrl(metadataUploadResult.blobUrl)
 
-    if (files.length === 0) {
-      toast.error("Please upload at least one file")
-      return
-    }
+    console.log("[Submit] Metadata uploaded:", metadataUploadResult)
 
-    try {
-      setIsSubmitting(true)
-      setIsEncrypting(true)
+    setIsEncrypting(false)
+    setIsEncrypted(true)
 
-      setUploadProgress("Uploading research file to Walrus...")
-      console.log("[Submit] Step 1: Uploading file to Walrus")
+    setUploadProgress("Submitting to Sui blockchain...")
+    console.log("[Submit] Step 3: Submitting to smart contract")
 
-      const mainFile = files[0]
-      const fileUploadResult = await uploadToWalrus(mainFile)
+    // 🔥 THIS IS THE KEY CHANGE - Capture the result
+    const result: any = await submitContribution(
+      poolId,
+      metadataUploadResult.blobId,
+      fileUploadResult.blobId,
+      profileId
+    )
 
-      setFileBlobId(fileUploadResult.blobId)
-      setFileBlobUrl(fileUploadResult.blobUrl)
+    console.log("📦 Submission Result:", result)
 
-      console.log("[Submit] File uploaded:", fileUploadResult)
-
-      setUploadProgress("Creating and uploading metadata to Walrus...")
-      console.log("[Submit] Step 2: Creating metadata")
-
-      const metadata = {
-        title,
-        summary,
-        severity,
-        filename: mainFile.name,
-        fileSize: mainFile.size,
-        fileBlobId: fileUploadResult.blobId,
-        fileBlobUrl: fileUploadResult.blobUrl,
-        submittedAt: new Date().toISOString(),
-        submittedBy: account.address,
-      }
-
-      const metadataBlob = new Blob([JSON.stringify(metadata, null, 2)], {
-        type: "application/json",
-      })
-      const metadataFile = new File([metadataBlob], "metadata.json", {
-        type: "application/json",
-      })
-
-      const metadataUploadResult = await uploadToWalrus(metadataFile)
-
-      setMetadataBlobId(metadataUploadResult.blobId)
-      setMetadataBlobUrl(metadataUploadResult.blobUrl)
-
-      console.log("[Submit] Metadata uploaded:", metadataUploadResult)
-
-      setIsEncrypting(false)
-      setIsEncrypted(true)
-
-      setUploadProgress("Submitting to Sui blockchain...")
-      console.log("[Submit] Step 3: Submitting to smart contract")
-
-      await submitContribution(
-        poolId,
-        metadataUploadResult.blobId,
-        fileUploadResult.blobId,
-        profileId
+    // 🔥 Extract the Contribution ID from objectChanges
+    if (result?.objectChanges) {
+      const createdContribution = result.objectChanges.find(
+        (change: any) =>
+          change.type === 'created' &&
+          change.objectType?.includes('Contribution')
       )
 
-      setUploadProgress("")
-      toast.success("Contribution submitted successfully!")
-      console.log("[Submit] ✅ Submission complete!")
-
-    } catch (error) {
-      console.error("[Submit] Error:", error)
-      setIsEncrypting(false)
-      setUploadProgress("")
-      toast.error(error instanceof Error ? error.message : "Failed to submit contribution")
-    } finally {
-      setIsSubmitting(false)
+      if (createdContribution?.objectId) {
+        const contributionId = createdContribution.objectId
+        console.log("✅ Contribution ID extracted:", contributionId)
+        
+        // Copy to clipboard
+        navigator.clipboard.writeText(contributionId)
+        
+        // Show success with the ID
+        toast.success(
+          `Contribution submitted successfully! ID: ${contributionId.slice(0, 10)}... (copied to clipboard)`
+        )
+      } else {
+        toast.success("Contribution submitted successfully! Check console for details")
+      }
     }
+
+    setUploadProgress("")
+    console.log("[Submit] ✅ Submission complete!")
+
+  } catch (error) {
+    console.error("[Submit] Error:", error)
+    setIsEncrypting(false)
+    setUploadProgress("")
+    toast.error(error instanceof Error ? error.message : "Failed to submit contribution")
+  } finally {
+    setIsSubmitting(false)
   }
+}
 
   return (
     <div className="pt-24 pb-20 container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">

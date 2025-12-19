@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-
+import { Suspense } from "react"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { Button } from "@/components/ui/button"
@@ -16,7 +16,8 @@ import { useCurrentAccount } from "@mysten/dapp-kit"
 import { toast } from "sonner"
 import { useSearchParams } from "next/navigation"
 
-export default function SubmitPage() {
+// Separate component that uses useSearchParams
+function SubmitForm() {
   const searchParams = useSearchParams()
   const [files, setFiles] = useState<File[]>([])
   const [isEncrypting, setIsEncrypting] = useState(false)
@@ -60,11 +61,6 @@ export default function SubmitPage() {
     }
   }
 
-  /**
-   * Upload a file to Walrus storage
-   * @param file - File to upload
-   * @returns Object containing blobId and blobUrl
-   */
   const uploadToWalrus = async (file: File): Promise<{ blobId: string; blobUrl: string }> => {
     const formData = new FormData()
     formData.append("file", file)
@@ -105,7 +101,6 @@ export default function SubmitPage() {
       const result: any = await createProfile();
       console.log("Profile Result:", result);
 
-      // Extract Profile ID from transaction result
       if (result?.objectChanges) {
         const createdProfile = result.objectChanges.find(
           (change: any) =>
@@ -119,7 +114,6 @@ export default function SubmitPage() {
           console.log("✅ Profile ID extracted:", newProfileId);
           toast.success(`Profile created! ID: ${newProfileId.slice(0, 10)}...`);
 
-          // Copy to clipboard
           navigator.clipboard.writeText(newProfileId);
           toast.success("Profile ID copied to clipboard!");
         } else {
@@ -135,7 +129,6 @@ export default function SubmitPage() {
   }
 
   const handleSubmit = async () => {
-    // Validation
     if (!account) {
       toast.error("Please connect your wallet first")
       return
@@ -165,11 +158,10 @@ export default function SubmitPage() {
       setIsSubmitting(true)
       setIsEncrypting(true)
 
-      // Step 1: Upload the main file(s) to Walrus
       setUploadProgress("Uploading research file to Walrus...")
       console.log("[Submit] Step 1: Uploading file to Walrus")
 
-      const mainFile = files[0] // For now, we'll upload the first file
+      const mainFile = files[0]
       const fileUploadResult = await uploadToWalrus(mainFile)
 
       setFileBlobId(fileUploadResult.blobId)
@@ -177,7 +169,6 @@ export default function SubmitPage() {
 
       console.log("[Submit] File uploaded:", fileUploadResult)
 
-      // Step 2: Create metadata JSON and upload to Walrus
       setUploadProgress("Creating and uploading metadata to Walrus...")
       console.log("[Submit] Step 2: Creating metadata")
 
@@ -193,7 +184,6 @@ export default function SubmitPage() {
         submittedBy: account.address,
       }
 
-      // Convert metadata to JSON blob
       const metadataBlob = new Blob([JSON.stringify(metadata, null, 2)], {
         type: "application/json",
       })
@@ -211,29 +201,19 @@ export default function SubmitPage() {
       setIsEncrypting(false)
       setIsEncrypted(true)
 
-      // Step 3: Submit to Sui smart contract
       setUploadProgress("Submitting to Sui blockchain...")
       console.log("[Submit] Step 3: Submitting to smart contract")
-      console.log("[Submit] Package ID: 0x4b8be87726a90695109542699847ea3f830c706ba6cfd46f1e9c607f76f3c600")
-      console.log("[Submit] Pool ID:", poolId)
-      console.log("[Submit] Profile ID:", profileId)
-      console.log("[Submit] Metadata Blob ID:", metadataUploadResult.blobId)
-      console.log("[Submit] File Blob ID:", fileUploadResult.blobId)
 
-      // Call the smart contract with blob IDs
       await submitContribution(
         poolId,
-        metadataUploadResult.blobId, // metadata_url (vector<u8>)
-        fileUploadResult.blobId, // encrypted_data_url (vector<u8>)
+        metadataUploadResult.blobId,
+        fileUploadResult.blobId,
         profileId
       )
 
-      // Success!
       setUploadProgress("")
       toast.success("Contribution submitted successfully!")
       console.log("[Submit] ✅ Submission complete!")
-      console.log("[Submit] File Blob URL:", fileUploadResult.blobUrl)
-      console.log("[Submit] Metadata Blob URL:", metadataUploadResult.blobUrl)
 
     } catch (error) {
       console.error("[Submit] Error:", error)
@@ -246,264 +226,268 @@ export default function SubmitPage() {
   }
 
   return (
-    <main className="min-h-screen bg-background">
-      <Header />
+    <div className="pt-24 pb-20 container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
+      <Link
+        href="/pools"
+        className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-8 transition-colors"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to Pools
+      </Link>
 
-      <div className="pt-24 pb-20 container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
-        {/* Back Button */}
-        <Link
-          href="/pools"
-          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-8 transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Pools
-        </Link>
-
-        {/* Page Header */}
-        <div className="mb-12 animate-in fade-in slide-in-from-bottom-4 duration-1000">
-          <h1 className="text-5xl font-bold mb-4 text-balance">Submit Contribution</h1>
-          <p className="text-xl text-muted-foreground text-pretty">
-            Upload your security proofs anchored securely on the Sui network. Your work is encrypted and timestamped
-            instantly.
-          </p>
-        </div>
-
-        {/* Main Form */}
-        <div className="space-y-6">
-          {/* Dev Helpers */}
-          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-6 animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-100">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-primary">Pre-requisites (Dev Mode)</h3>
-              {!account && <span className="text-sm font-medium text-destructive">Wallet Disconnected</span>}
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <Label htmlFor="poolId">Pool ID</Label>
-                <Input
-                  id="poolId"
-                  value={poolId}
-                  onChange={(e) => setPoolId(e.target.value)}
-                  placeholder="0x..."
-                  className="mt-1.5"
-                />
-              </div>
-              <div>
-                <Label htmlFor="profileId">Contributor Profile ID</Label>
-                <div className="flex gap-2 mt-1.5">
-                  <Input
-                    id="profileId"
-                    value={profileId}
-                    onChange={(e) => setProfileId(e.target.value)}
-                    placeholder="0x..."
-                  />
-                  <Button
-                    variant="secondary"
-                    size="icon"
-                    onClick={handleCreateProfile}
-                    disabled={isCreatingProfile || !account}
-                    title="Create Profile"
-                  >
-                    <UserPlus className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Submission Details */}
-          <div className="rounded-2xl border border-border bg-card p-8 animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-200">
-            <h3 className="text-lg font-semibold mb-6">Submission Details</h3>
-
-            <div className="space-y-6">
-              <div>
-                <Label htmlFor="title" className="text-base font-semibold">
-                  Title *
-                </Label>
-                <Input
-                  id="title"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Brief description of your findings"
-                  className="mt-2 h-12"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="findings" className="text-base font-semibold">
-                  Executive Summary *
-                </Label>
-                <Textarea
-                  id="findings"
-                  value={summary}
-                  onChange={(e) => setSummary(e.target.value)}
-                  placeholder="Summarize your key findings and recommendations..."
-                  className="mt-2 min-h-40"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="severity" className="text-base font-semibold">
-                  Severity Level *
-                </Label>
-                <select
-                  id="severity"
-                  value={severity}
-                  onChange={(e) => setSeverity(e.target.value)}
-                  className="mt-2 w-full h-12 px-3 rounded-lg border border-border bg-background"
-                >
-                  <option value="">Select severity</option>
-                  <option value="Critical">Critical</option>
-                  <option value="High">High</option>
-                  <option value="Medium">Medium</option>
-                  <option value="Low">Low</option>
-                  <option value="Informational">Informational</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* File Upload */}
-          <div className="rounded-2xl border border-border bg-card p-8 animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-300">
-            <h3 className="text-lg font-semibold mb-6">Upload Report</h3>
-
-            <div className="border-2 border-dashed border-border rounded-xl p-12 text-center hover:border-primary/50 transition-colors">
-              <input
-                type="file"
-                id="file-upload"
-                className="hidden"
-                onChange={handleFileUpload}
-                multiple
-                accept=".pdf,.doc,.docx,.md"
-              />
-              <label htmlFor="file-upload" className="cursor-pointer">
-                <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                <div className="text-lg font-semibold mb-2">Drop your files here or click to browse</div>
-                <div className="text-sm text-muted-foreground">Supports PDF, DOC, DOCX, MD (max 50MB)</div>
-              </label>
-            </div>
-
-            {/* Uploaded Files */}
-            {files.length > 0 && (
-              <div className="mt-6 space-y-3">
-                {files.map((file, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between p-4 rounded-lg border border-border bg-muted/30"
-                  >
-                    <div className="flex items-center gap-3">
-                      <FileText className="h-5 w-5 text-primary" />
-                      <div>
-                        <div className="font-medium">{file.name}</div>
-                        <div className="text-sm text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</div>
-                      </div>
-                    </div>
-                    {isEncrypted && <CheckCircle2 className="h-5 w-5 text-primary" />}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Upload Progress */}
-            {uploadProgress && (
-              <div className="mt-6 rounded-lg border border-primary/30 bg-primary/5 p-6">
-                <div className="flex items-start gap-3">
-                  <div className="h-5 w-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                  <div>
-                    <div className="font-semibold text-primary mb-1">Processing...</div>
-                    <div className="text-sm text-muted-foreground">{uploadProgress}</div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Success - Files Uploaded to Walrus */}
-            {fileBlobId && metadataBlobId && !isSubmitting && (
-              <div className="mt-6 rounded-lg border border-green-500/30 bg-green-500/5 p-6">
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <div className="font-semibold text-green-500 mb-2">Files Uploaded to Walrus!</div>
-                    <div className="space-y-2 text-sm">
-                      <div>
-                        <div className="font-medium text-foreground">Research File:</div>
-                        <a
-                          href={fileBlobUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary hover:underline break-all"
-                        >
-                          {fileBlobUrl}
-                        </a>
-                        <div className="text-xs text-muted-foreground mt-1">Blob ID: {fileBlobId}</div>
-                      </div>
-                      <div>
-                        <div className="font-medium text-foreground">Metadata:</div>
-                        <a
-                          href={metadataBlobUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary hover:underline break-all"
-                        >
-                          {metadataBlobUrl}
-                        </a>
-                        <div className="text-xs text-muted-foreground mt-1">Blob ID: {metadataBlobId}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Encryption Status */}
-            {(isEncrypting || isEncrypted) && !fileBlobId && (
-              <div className="mt-6 rounded-lg border border-primary/30 bg-primary/5 p-6">
-                <div className="flex items-start gap-3">
-                  {isEncrypting ? (
-                    <div className="h-5 w-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <Lock className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
-                  )}
-                  <div>
-                    <div className="font-semibold text-primary mb-1">
-                      {isEncrypting ? "Encrypting your submission..." : "Encrypted & Secured"}
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {isEncrypting
-                        ? "Your work is being encrypted and timestamped on-chain"
-                        : "Your report is encrypted and ready for submission. Only authorized reviewers can decrypt it."}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Submit Button */}
-          <div className="flex justify-end gap-4 animate-in fade-in duration-1000 delay-400">
-            <Link href="/pools">
-              <Button variant="outline" size="lg">
-                Cancel
-              </Button>
-            </Link>
-            <Button
-              size="lg"
-              className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
-              onClick={handleSubmit}
-              disabled={isSubmitting || !account}
-            >
-              {isSubmitting ? (
-                <>Processing...</>
-              ) : (
-                <>
-                  Submit Contribution
-                  <Send className="ml-2 h-4 w-4" />
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
+      <div className="mb-12 animate-in fade-in slide-in-from-bottom-4 duration-1000">
+        <h1 className="text-5xl font-bold mb-4 text-balance">Submit Contribution</h1>
+        <p className="text-xl text-muted-foreground text-pretty">
+          Upload your security proofs anchored securely on the Sui network. Your work is encrypted and timestamped
+          instantly.
+        </p>
       </div>
 
+      <div className="space-y-6">
+        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-6 animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-100">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-primary">Pre-requisites (Dev Mode)</h3>
+            {!account && <span className="text-sm font-medium text-destructive">Wallet Disconnected</span>}
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <Label htmlFor="poolId">Pool ID</Label>
+              <Input
+                id="poolId"
+                value={poolId}
+                onChange={(e) => setPoolId(e.target.value)}
+                placeholder="0x..."
+                className="mt-1.5"
+              />
+            </div>
+            <div>
+              <Label htmlFor="profileId">Contributor Profile ID</Label>
+              <div className="flex gap-2 mt-1.5">
+                <Input
+                  id="profileId"
+                  value={profileId}
+                  onChange={(e) => setProfileId(e.target.value)}
+                  placeholder="0x..."
+                />
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  onClick={handleCreateProfile}
+                  disabled={isCreatingProfile || !account}
+                  title="Create Profile"
+                >
+                  <UserPlus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-border bg-card p-8 animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-200">
+          <h3 className="text-lg font-semibold mb-6">Submission Details</h3>
+
+          <div className="space-y-6">
+            <div>
+              <Label htmlFor="title" className="text-base font-semibold">
+                Title *
+              </Label>
+              <Input
+                id="title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Brief description of your findings"
+                className="mt-2 h-12"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="findings" className="text-base font-semibold">
+                Executive Summary *
+              </Label>
+              <Textarea
+                id="findings"
+                value={summary}
+                onChange={(e) => setSummary(e.target.value)}
+                placeholder="Summarize your key findings and recommendations..."
+                className="mt-2 min-h-40"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="severity" className="text-base font-semibold">
+                Severity Level *
+              </Label>
+              <select
+                id="severity"
+                value={severity}
+                onChange={(e) => setSeverity(e.target.value)}
+                className="mt-2 w-full h-12 px-3 rounded-lg border border-border bg-background"
+              >
+                <option value="">Select severity</option>
+                <option value="Critical">Critical</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+                <option value="Informational">Informational</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-border bg-card p-8 animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-300">
+          <h3 className="text-lg font-semibold mb-6">Upload Report</h3>
+
+          <div className="border-2 border-dashed border-border rounded-xl p-12 text-center hover:border-primary/50 transition-colors">
+            <input
+              type="file"
+              id="file-upload"
+              className="hidden"
+              onChange={handleFileUpload}
+              multiple
+              accept=".pdf,.doc,.docx,.md"
+            />
+            <label htmlFor="file-upload" className="cursor-pointer">
+              <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+              <div className="text-lg font-semibold mb-2">Drop your files here or click to browse</div>
+              <div className="text-sm text-muted-foreground">Supports PDF, DOC, DOCX, MD (max 50MB)</div>
+            </label>
+          </div>
+
+          {files.length > 0 && (
+            <div className="mt-6 space-y-3">
+              {files.map((file, index) => (
+                <div
+                  key={index}
+                  className="flex items-center justify-between p-4 rounded-lg border border-border bg-muted/30"
+                >
+                  <div className="flex items-center gap-3">
+                    <FileText className="h-5 w-5 text-primary" />
+                    <div>
+                      <div className="font-medium">{file.name}</div>
+                      <div className="text-sm text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</div>
+                    </div>
+                  </div>
+                  {isEncrypted && <CheckCircle2 className="h-5 w-5 text-primary" />}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {uploadProgress && (
+            <div className="mt-6 rounded-lg border border-primary/30 bg-primary/5 p-6">
+              <div className="flex items-start gap-3">
+                <div className="h-5 w-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                <div>
+                  <div className="font-semibold text-primary mb-1">Processing...</div>
+                  <div className="text-sm text-muted-foreground">{uploadProgress}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {fileBlobId && metadataBlobId && !isSubmitting && (
+            <div className="mt-6 rounded-lg border border-green-500/30 bg-green-500/5 p-6">
+              <div className="flex items-start gap-3">
+                <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <div className="font-semibold text-green-500 mb-2">Files Uploaded to Walrus!</div>
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <div className="font-medium text-foreground">Research File:</div>
+                      <a
+                        href={fileBlobUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline break-all"
+                      >
+                        {fileBlobUrl}
+                      </a>
+                      <div className="text-xs text-muted-foreground mt-1">Blob ID: {fileBlobId}</div>
+                    </div>
+                    <div>
+                      <div className="font-medium text-foreground">Metadata:</div>
+                      <a
+                        href={metadataBlobUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline break-all"
+                      >
+                        {metadataBlobUrl}
+                      </a>
+                      <div className="text-xs text-muted-foreground mt-1">Blob ID: {metadataBlobId}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {(isEncrypting || isEncrypted) && !fileBlobId && (
+            <div className="mt-6 rounded-lg border border-primary/30 bg-primary/5 p-6">
+              <div className="flex items-start gap-3">
+                {isEncrypting ? (
+                  <div className="h-5 w-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Lock className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
+                )}
+                <div>
+                  <div className="font-semibold text-primary mb-1">
+                    {isEncrypting ? "Encrypting your submission..." : "Encrypted & Secured"}
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {isEncrypting
+                      ? "Your work is being encrypted and timestamped on-chain"
+                      : "Your report is encrypted and ready for submission. Only authorized reviewers can decrypt it."}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-4 animate-in fade-in duration-1000 delay-400">
+          <Link href="/pools">
+            <Button variant="outline" size="lg">
+              Cancel
+            </Button>
+          </Link>
+          <Button
+            size="lg"
+            className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
+            onClick={handleSubmit}
+            disabled={isSubmitting || !account}
+          >
+            {isSubmitting ? (
+              <>Processing...</>
+            ) : (
+              <>
+                Submit Contribution
+                <Send className="ml-2 h-4 w-4" />
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Main component with Suspense wrapper
+export default function SubmitPage() {
+  return (
+    <main className="min-h-screen bg-background">
+      <Header />
+      <Suspense fallback={
+        <div className="pt-24 pb-20 container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
+          <div className="animate-pulse">
+            <div className="h-8 bg-muted rounded w-32 mb-8" />
+            <div className="h-12 bg-muted rounded w-96 mb-4" />
+            <div className="h-6 bg-muted rounded w-full mb-12" />
+          </div>
+        </div>
+      }>
+        <SubmitForm />
+      </Suspense>
       <Footer />
     </main>
   )

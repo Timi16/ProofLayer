@@ -9,9 +9,26 @@ import { Textarea } from "@/components/ui/textarea"
 import { ArrowLeft, Plus, X } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
+import { useProofLayer } from "@/hooks/useProofLayer"
+import { useCurrentAccount } from "@mysten/dapp-kit"
+import { toast } from "sonner"
+import { useRouter } from "next/navigation"
 
 export default function CreatePoolPage() {
+  const router = useRouter()
+  const { createPool } = useProofLayer()
+  const account = useCurrentAccount()
   const [currentStep, setCurrentStep] = useState(1)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Form State
+  const [poolName, setPoolName] = useState("")
+  const [description, setDescription] = useState("")
+  const [scope, setScope] = useState("")
+  const [requirements, setRequirements] = useState("")
+  const [timeline, setTimeline] = useState("")
+  const [bounty, setBounty] = useState("")
+
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState("")
 
@@ -24,6 +41,43 @@ export default function CreatePoolPage() {
 
   const removeTag = (tagToRemove: string) => {
     setTags(tags.filter((tag) => tag !== tagToRemove))
+  }
+
+  const handleCreatePool = async () => {
+    if (!account) {
+      toast.error("Please connect your wallet first");
+      return;
+    }
+
+    const bountyAmount = parseFloat(bounty);
+    if (isNaN(bountyAmount) || bountyAmount <= 0) {
+      toast.error("Please enter a valid bounty amount");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      // Combine fields into description for strict contract matching, or use metadata service in prod
+      const fullDescription = JSON.stringify({
+        description,
+        scope,
+        requirements,
+        timeline,
+        tags
+      });
+
+      // Assuming minReward is 10% of total bounty for this simple implementation
+      const minReward = bountyAmount * 0.1;
+
+      await createPool(poolName, fullDescription, minReward, bountyAmount);
+      toast.success("Pool created successfully!");
+      router.push("/pools");
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to create pool");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   const steps = [
@@ -69,11 +123,10 @@ export default function CreatePoolPage() {
             {steps.map((step) => (
               <div key={step.number} className="flex flex-col items-center">
                 <div
-                  className={`flex h-10 w-10 items-center justify-center rounded-full border-2 transition-all duration-300 ${
-                    currentStep >= step.number
+                  className={`flex h-10 w-10 items-center justify-center rounded-full border-2 transition-all duration-300 ${currentStep >= step.number
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border bg-background text-muted-foreground"
-                  }`}
+                    }`}
                 >
                   {step.number}
                 </div>
@@ -94,7 +147,13 @@ export default function CreatePoolPage() {
                 <Label htmlFor="poolName" className="text-base font-semibold">
                   Pool Name *
                 </Label>
-                <Input id="poolName" placeholder="e.g., DeepBook V3 Security Audit" className="mt-2 h-12" />
+                <Input
+                  id="poolName"
+                  value={poolName}
+                  onChange={(e) => setPoolName(e.target.value)}
+                  placeholder="e.g., DeepBook V3 Security Audit"
+                  className="mt-2 h-12"
+                />
               </div>
 
               <div>
@@ -119,6 +178,8 @@ export default function CreatePoolPage() {
                 </Label>
                 <Textarea
                   id="description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
                   placeholder="Describe what needs to be audited and any specific concerns..."
                   className="mt-2 min-h-32"
                 />
@@ -165,6 +226,8 @@ export default function CreatePoolPage() {
                 </Label>
                 <Textarea
                   id="scope"
+                  value={scope}
+                  onChange={(e) => setScope(e.target.value)}
                   placeholder="Define what should be covered in the audit: specific contracts, functions, attack vectors..."
                   className="mt-2 min-h-40"
                 />
@@ -176,6 +239,8 @@ export default function CreatePoolPage() {
                 </Label>
                 <Textarea
                   id="requirements"
+                  value={requirements}
+                  onChange={(e) => setRequirements(e.target.value)}
                   placeholder="List specific requirements: tools to use, reporting format, experience level..."
                   className="mt-2 min-h-32"
                 />
@@ -185,7 +250,14 @@ export default function CreatePoolPage() {
                 <Label htmlFor="timeline" className="text-base font-semibold">
                   Timeline *
                 </Label>
-                <Input id="timeline" type="number" placeholder="Number of days" className="mt-2 h-12" />
+                <Input
+                  id="timeline"
+                  value={timeline}
+                  onChange={(e) => setTimeline(e.target.value)}
+                  type="number"
+                  placeholder="Number of days"
+                  className="mt-2 h-12"
+                />
               </div>
             </div>
           )}
@@ -197,7 +269,14 @@ export default function CreatePoolPage() {
                   Total Bounty Pool *
                 </Label>
                 <div className="mt-2 relative">
-                  <Input id="bounty" type="number" placeholder="0" className="h-12 pr-16" />
+                  <Input
+                    id="bounty"
+                    value={bounty}
+                    onChange={(e) => setBounty(e.target.value)}
+                    type="number"
+                    placeholder="0"
+                    className="h-12 pr-16"
+                  />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground font-medium">
                     SUI
                   </span>
@@ -220,16 +299,16 @@ export default function CreatePoolPage() {
                 <div className="space-y-2 text-sm text-muted-foreground">
                   <div className="flex justify-between">
                     <span>Platform Fee (5%)</span>
-                    <span className="font-medium text-foreground">TBD</span>
+                    <span className="font-medium text-foreground">{(parseFloat(bounty || "0") * 0.05).toFixed(2)} SUI</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Contributor Rewards</span>
-                    <span className="font-medium text-foreground">TBD</span>
+                    <span className="font-medium text-foreground">{bounty || "0"} SUI</span>
                   </div>
                   <div className="h-px bg-border my-3" />
                   <div className="flex justify-between text-base">
                     <span className="font-semibold text-foreground">Total Required</span>
-                    <span className="font-bold text-primary">TBD SUI</span>
+                    <span className="font-bold text-primary">{(parseFloat(bounty || "0") * 1.05).toFixed(2)} SUI</span>
                   </div>
                 </div>
               </div>
@@ -248,8 +327,12 @@ export default function CreatePoolPage() {
             {currentStep < 3 ? (
               <Button onClick={() => setCurrentStep(Math.min(3, currentStep + 1))}>Continue</Button>
             ) : (
-              <Button className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold">
-                Create Pool & Fund
+              <Button
+                onClick={handleCreatePool}
+                disabled={isSubmitting || !account}
+                className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
+              >
+                {isSubmitting ? "Creating Pool..." : "Create Pool & Fund"}
               </Button>
             )}
           </div>

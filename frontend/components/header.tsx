@@ -1,5 +1,7 @@
 "use client"
 
+import { ConnectButton } from "@mysten/dapp-kit";
+
 import { Button } from "@/components/ui/button"
 import { ShieldCheck } from "lucide-react"
 import Link from "next/link"
@@ -24,25 +26,22 @@ export function Header() {
             <nav className="hidden md:flex items-center gap-8">
               <Link
                 href="/pools"
-                className={`text-sm transition-colors ${
-                  pathname === "/pools" ? "text-primary font-semibold" : "text-muted-foreground hover:text-foreground"
-                }`}
+                className={`text-sm transition-colors ${pathname === "/pools" ? "text-primary font-semibold" : "text-muted-foreground hover:text-foreground"
+                  }`}
               >
                 Pools
               </Link>
               <Link
                 href="/submit"
-                className={`text-sm transition-colors ${
-                  pathname === "/submit" ? "text-primary font-semibold" : "text-muted-foreground hover:text-foreground"
-                }`}
+                className={`text-sm transition-colors ${pathname === "/submit" ? "text-primary font-semibold" : "text-muted-foreground hover:text-foreground"
+                  }`}
               >
                 Research
               </Link>
               <Link
                 href="/profile"
-                className={`text-sm transition-colors ${
-                  pathname === "/profile" ? "text-primary font-semibold" : "text-muted-foreground hover:text-foreground"
-                }`}
+                className={`text-sm transition-colors ${pathname === "/profile" ? "text-primary font-semibold" : "text-muted-foreground hover:text-foreground"
+                  }`}
               >
                 Profile
               </Link>
@@ -57,9 +56,13 @@ export function Header() {
             </nav>
           )}
 
-          <Link href="/pools">
-            <Button className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold">Launch App</Button>
-          </Link>
+          {isLandingPage ? (
+            <Link href="/pools">
+              <Button className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold">Launch App</Button>
+            </Link>
+          ) : (
+            <ConnectButton />
+          )}
         </div>
       </div>
     </header>

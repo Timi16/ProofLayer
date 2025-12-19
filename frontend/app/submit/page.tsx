@@ -8,14 +8,27 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeft, Upload, FileText, Lock, CheckCircle2 } from "lucide-react"
+import { ArrowLeft, Upload, FileText, Lock, CheckCircle2, UserPlus, Send } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
+import { useProofLayer } from "@/hooks/useProofLayer"
+import { useCurrentAccount } from "@mysten/dapp-kit"
+import { toast } from "sonner"
 
 export default function SubmitPage() {
   const [files, setFiles] = useState<File[]>([])
   const [isEncrypting, setIsEncrypting] = useState(false)
   const [isEncrypted, setIsEncrypted] = useState(false)
+
+  // Contract Interaction State
+  const { submitContribution, createProfile } = useProofLayer()
+  const account = useCurrentAccount()
+  const [poolId, setPoolId] = useState("")
+  const [profileId, setProfileId] = useState("")
+  const [title, setTitle] = useState("")
+  const [summary, setSummary] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isCreatingProfile, setIsCreatingProfile] = useState(false)
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -26,6 +39,53 @@ export default function SubmitPage() {
         setIsEncrypting(false)
         setIsEncrypted(true)
       }, 2000)
+    }
+  }
+
+  const handleCreateProfile = async () => {
+    if (!account) {
+      toast.error("Please connect your wallet first");
+      return;
+    }
+    try {
+      setIsCreatingProfile(true);
+      const result: any = await createProfile();
+      console.log("Profile Result:", result);
+      // In a real app, we'd parse the event to get the ID automatically
+      toast.success("Profile created successfully! details in console");
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to create profile");
+    } finally {
+      setIsCreatingProfile(false);
+    }
+  }
+
+  const handleSubmit = async () => {
+    if (!account) {
+      toast.error("Please connect your wallet first");
+      return;
+    }
+    if (!poolId || !profileId) {
+      toast.error("Please enter Pool ID and Profile ID");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      // In a real implementation: 
+      // 1. Upload files to Walrus/IPFS -> get metadataUrl & encryptedDataUrl
+      // 2. Encrypt file content
+      const dummyMetadataUrl = "https://walrus.example/metadata/" + Date.now();
+      const dummyEncryptedUrl = "https://walrus.example/data/" + Date.now();
+
+      await submitContribution(poolId, dummyMetadataUrl, dummyEncryptedUrl, profileId);
+      toast.success("Contribution submitted successfully!");
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to submit contribution");
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -54,19 +114,44 @@ export default function SubmitPage() {
 
         {/* Main Form */}
         <div className="space-y-6">
-          {/* Pool Selection */}
-          <div className="rounded-2xl border border-border bg-card p-8 animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-100">
-            <Label htmlFor="pool" className="text-base font-semibold">
-              Select Pool *
-            </Label>
-            <select id="pool" className="mt-2 w-full h-12 px-3 rounded-lg border border-border bg-background">
-              <option>Choose an active contribution pool</option>
-              <option>DeepBook V3 Audit - 50,000 SUI</option>
-              <option>Scallop Protocol - 80,000 SUI</option>
-              <option>Aftermath Finance - 35,000 SUI</option>
-              <option>Cetus AMM - 25,000 SUI</option>
-              <option>Pyth Integrations - 10,000 SUI</option>
-            </select>
+          {/* Dev Helpers */}
+          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-6 animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-100">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-primary">Pre-requisites (Dev Mode)</h3>
+              {!account && <span className="text-sm font-medium text-destructive">Wallet Disconnected</span>}
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <Label htmlFor="poolId">Pool ID</Label>
+                <Input
+                  id="poolId"
+                  value={poolId}
+                  onChange={(e) => setPoolId(e.target.value)}
+                  placeholder="0x..."
+                  className="mt-1.5"
+                />
+              </div>
+              <div>
+                <Label htmlFor="profileId">Contributor Profile ID</Label>
+                <div className="flex gap-2 mt-1.5">
+                  <Input
+                    id="profileId"
+                    value={profileId}
+                    onChange={(e) => setProfileId(e.target.value)}
+                    placeholder="0x..."
+                  />
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    onClick={handleCreateProfile}
+                    disabled={isCreatingProfile || !account}
+                    title="Create Profile"
+                  >
+                    <UserPlus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Submission Details */}
@@ -78,7 +163,13 @@ export default function SubmitPage() {
                 <Label htmlFor="title" className="text-base font-semibold">
                   Title *
                 </Label>
-                <Input id="title" placeholder="Brief description of your findings" className="mt-2 h-12" />
+                <Input
+                  id="title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Brief description of your findings"
+                  className="mt-2 h-12"
+                />
               </div>
 
               <div>
@@ -87,6 +178,8 @@ export default function SubmitPage() {
                 </Label>
                 <Textarea
                   id="findings"
+                  value={summary}
+                  onChange={(e) => setSummary(e.target.value)}
                   placeholder="Summarize your key findings and recommendations..."
                   className="mt-2 min-h-40"
                 />
@@ -182,10 +275,18 @@ export default function SubmitPage() {
             </Link>
             <Button
               size="lg"
-              disabled={files.length === 0 || isEncrypting}
               className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
+              onClick={handleSubmit}
+              disabled={isSubmitting || !account}
             >
-              Submit Contribution
+              {isSubmitting ? (
+                <>Processing...</>
+              ) : (
+                <>
+                  Submit Contribution
+                  <Send className="ml-2 h-4 w-4" />
+                </>
+              )}
             </Button>
           </div>
         </div>

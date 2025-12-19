@@ -156,9 +156,106 @@ export function useProofLayer() {
         }
     };
 
+    /**
+     * Approve a contribution and pay reward
+     * Pool owner only
+     */
+    const approveContribution = async (
+        poolId: string,
+        contributionId: string,
+        rewardAmount: number,
+        profileId: string
+    ) => {
+        if (!PACKAGE_ID) throw new Error("Package ID not configured");
+
+        const tx = new Transaction();
+
+        // Convert reward to MIST (1 SUI = 1e9 MIST)
+        const rewardAmountMist = Math.floor(rewardAmount * 1_000_000_000);
+
+        tx.moveCall({
+            target: `${PACKAGE_ID}::${MODULE_NAME}::approve_contribution`,
+            arguments: [
+                tx.object(poolId),
+                tx.object(contributionId),
+                tx.pure.u64(rewardAmountMist),
+                tx.object(profileId),
+            ],
+        });
+
+        try {
+            const result = await signAndExecuteAsync({
+                transaction: tx,
+            });
+
+            console.log("✅ Approval transaction executed, digest:", result.digest);
+
+            const txDetails = await suiClient.waitForTransaction({
+                digest: result.digest,
+                options: {
+                    showObjectChanges: true,
+                    showEffects: true,
+                    showEvents: true,
+                },
+            });
+
+            console.log("✅ Contribution approved:", txDetails);
+            return txDetails;
+        } catch (error) {
+            console.error("❌ Approval failed:", error);
+            throw error;
+        }
+    };
+
+    /**
+     * Reject a contribution
+     * Pool owner only
+     */
+    const rejectContribution = async (
+        poolId: string,
+        contributionId: string
+    ) => {
+        if (!PACKAGE_ID) throw new Error("Package ID not configured");
+
+        const tx = new Transaction();
+
+        tx.moveCall({
+            target: `${PACKAGE_ID}::${MODULE_NAME}::reject_contribution`,
+            arguments: [
+                tx.object(poolId),
+                tx.object(contributionId),
+            ],
+        });
+
+        try {
+            const result = await signAndExecuteAsync({
+                transaction: tx,
+            });
+
+            console.log("✅ Rejection transaction executed, digest:", result.digest);
+
+            const txDetails = await suiClient.waitForTransaction({
+                digest: result.digest,
+                options: {
+                    showObjectChanges: true,
+                    showEffects: true,
+                    showEvents: true,
+                },
+            });
+
+            console.log("✅ Contribution rejected:", txDetails);
+            return txDetails;
+        } catch (error) {
+            console.error("❌ Rejection failed:", error);
+            throw error;
+        }
+    };
+
     return {
         submitContribution,
         createProfile,
         createPool,
+        approveContribution,
+        rejectContribution,
     };
 }

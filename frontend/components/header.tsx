@@ -46,12 +46,12 @@ export function Header() {
                 Profile
               </Link>
               <a
-                href="https://docs.prooflayer.com"
+                href="Review"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
-                Docs
+                Review
               </a>
             </nav>
           )}

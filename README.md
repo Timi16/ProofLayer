@@ -69,3 +69,16 @@ ProofLayer intentionally leverages the Sui ecosystem:
 | **Seal** | Encryption and secure access |
 | **Nautilus Wallet** | User interaction & transactions |
 | **zkLogin / Passkey** | Easy onboarding for non-crypto users |
+
+## Target Users
+- Security researchers  
+- Students and early-career engineers  
+- Academic and research labs  
+- Web3 protocols and startups  
+- Hackathons and technical programs  
+
+##  Why ProofLayer Matters
+- Expands Sui into **security and research infrastructure**
+- Solves real-world **data integrity and trust problems**
+- Demonstrates meaningful use of the **full Sui stack**
+- Enables verifiable proof of skill through real work

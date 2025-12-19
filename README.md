@@ -1,5 +1,4 @@
 # ProofLayer
-
 **ProofLayer is a Sui-native platform for verifiable security, research, and skill contributions.**  
 It enables organizations to fund real work, contributors to submit protected artefacts, and rewards plus reputation to be distributed transparently on-chain.
 
@@ -21,3 +20,22 @@ As a result:
 - Organizations struggle to trust external submissions  
 - Sensitive data is often mishandled or siloed  
 This is a **coordination and trust problem**, not just a tooling problem.
+
+
+## Solution
+**ProofLayer** provides a decentralized coordination layer where:
+- Organizations, labs, or teams create **funded contribution pools**
+- Contributors submit **real security or research work**
+- Submissions are:
+  - Stored immutably using **Walrus**
+  - Encrypted and access-controlled using **Seal**
+  - Linked on-chain to the contributor as a verifiable object
+- Pool owners review and approve submissions
+- **Rewards are distributed automatically on Sui**
+- Each accepted contribution builds an **on-chain contributor profile**
+
+This bridges:
+- **Security & research infrastructure**
+- **Skill & data coordination**
+- **Security & research infrastructure**
+- **Skill & data coordination**
